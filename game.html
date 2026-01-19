@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>十字封鎖 - 線上即時對戰版</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f4f4f9; }
+        .controls { margin: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+        .info { margin-bottom: 10px; font-weight: bold; font-size: 1.2em; }
+        .board { display: grid; gap: 5px; background-color: #bbb; border: 5px solid #444; padding: 5px; margin-top: 10px; }
+        .cell { width: 60px; height: 60px; background-color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; cursor: pointer; transition: 0.2s; }
+        .cell:hover:not(.taken):not(.blocked) { background-color: #e0e0e0; }
+        .cell.black { color: black; font-size: 40px; }
+        .cell.blue { color: #1a73e8; font-size: 40px; }
+        .cell.blocked { color: #d32f2f; background-color: #ffebee; cursor: not-allowed; }
+        .cell.taken { cursor: not-allowed; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #4caf50; color: white; border: none; border-radius: 4px; margin: 5px; }
+        .role-indicator { margin: 10px; padding: 5px 15px; border-radius: 20px; border: 2px solid #ccc; }
+    </style>
+</head>
+<body>
+
+    <h2>十字封鎖 (線上對戰版)</h2>
+
+    <div class="controls">
+        <div id="roleDisplay" class="role-indicator">正在加入遊戲...</div>
+        <div id="status" class="info">等待對手連線...</div>
+        <button onclick="requestReset()">重設遊戲</button>
+    </div>
+
+    <div id="gameBoard" class="board"></div>
+
+    <script>
+        // --- Firebase 設定 ---
+        const firebaseConfig = {
+            // ⚠️ 請在此處貼上您從 Firebase Console 複製的 Config 內容
+            apiKey: "AIzaSyDtx7-xzPRrPLddZH-s2EHfkisX6v7dDns",
+    authDomain: "crossblockinggame.firebaseapp.com",
+    databaseURL: "https://crossblockinggame-default-rtdb.firebaseio.com",
+    projectId: "crossblockinggame",
+    storageBucket: "crossblockinggame.firebasestorage.app",
+    messagingSenderId: "576173699477",
+    appId: "1:576173699477:web:9f03785d85efc74541069c",
+    measurementId: "G-TXL8MMG17P"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const gameRef = db.ref("multiplayer_game"); // 固定一個房間，多人可擴充
+
+        // --- 遊戲變數 ---
+        let size = 3;
+        let currentPlayer = 'black';
+        let boardData = [];
+        let isGameOver = false;
+        let myRole = null; // 紀錄我是黑子還是白子
+
+        // --- 核心邏輯：監聽雲端資料更新 ---
+        gameRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                // 如果資料庫是空的，初始化遊戲
+                initDatabase();
+                return;
+            }
+            
+            size = data.size;
+            boardData = data.boardData;
+            currentPlayer = data.currentPlayer;
+            isGameOver = data.isGameOver;
+
+            // 分配角色邏輯 (簡單示範：先進來的是黑子)
+            if (!myRole) {
+                assignRole(data.players);
+            }
+
+            updateUI();
+            checkLocalWin();
+        });
+
+        function initDatabase() {
+            const initialData = {
+                size: 3,
+                currentPlayer: 'black',
+                boardData: Array(3).fill().map(() => Array(3).fill(0)),
+                isGameOver: false,
+                players: {}
+            };
+            gameRef.set(initialData);
+        }
+
+        function assignRole(players) {
+            // 這邊可以用更嚴謹的 Session 判斷，這裡先簡化
+            // 提示玩家根據目前人數選擇角色，或由您手動定義
+            const role = confirm("點擊「確定」擔任黑子 (先手)，「取消」擔任藍子 (後手)");
+            myRole = role ? 'black' : 'blue';
+            document.getElementById('roleDisplay').innerText = `我的身分：${myRole === 'black' ? '黑子' : '藍子'}`;
+            document.getElementById('roleDisplay').style.borderColor = myRole === 'black' ? 'black' : '#1a73e8';
+        }
+
+        function updateUI() {
+            const statusEl = document.getElementById('status');
+            if (isGameOver) return;
+
+            const pName = (currentPlayer === 'black') ? "黑子 (先手)" : "藍子 (後手)";
+            statusEl.innerText = `輪到：${pName}`;
+            statusEl.style.color = (currentPlayer === 'black') ? "black" : "#1a73e8";
+
+            if (currentPlayer === myRole) {
+                statusEl.innerText += " (您的回合)";
+            }
+
+            renderBoard();
+        }
+
+        function renderBoard() {
+            const boardEl = document.getElementById('gameBoard');
+            boardEl.innerHTML = '';
+            boardEl.style.gridTemplateColumns = `repeat(${size}, 60px)`;
+
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+
+                    if (boardData[r][c] === 1) {
+                        cell.innerText = '●';
+                        cell.classList.add('black', 'taken');
+                    } else if (boardData[r][c] === 2) {
+                        cell.innerText = '●';
+                        cell.classList.add('blue', 'taken');
+                    } else {
+                        if (checkBlocked(r, c)) {
+                            cell.innerText = '✕';
+                            cell.classList.add('blocked');
+                        } else {
+                            cell.onclick = () => makeMove(r, c);
+                        }
+                    }
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function checkBlocked(r, c) {
+            let count = 0;
+            for (let i = 0; i < size; i++) if (boardData[r][i] !== 0) count++;
+            for (let i = 0; i < size; i++) if (boardData[i][c] !== 0) count++;
+            return count >= 2;
+        }
+
+        function makeMove(r, c) {
+            if (isGameOver || currentPlayer !== myRole) return;
+
+            // 更新本地資料後上傳到 Firebase
+            const newBoardData = JSON.parse(JSON.stringify(boardData));
+            newBoardData[r][c] = (myRole === 'black') ? 1 : 2;
+            
+            gameRef.update({
+                boardData: newBoardData,
+                currentPlayer: (myRole === 'black') ? 'blue' : 'black'
+            });
+        }
+
+        function checkLocalWin() {
+            let canMove = false;
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    if (boardData[r][c] === 0 && !checkBlocked(r, c)) {
+                        canMove = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!canMove && !isGameOver) {
+                const winner = (currentPlayer === 'black') ? "藍子 (後手)" : "黑子 (先手)";
+                document.getElementById('status').innerText = `遊戲結束！贏家是：${winner}`;
+                document.getElementById('status').style.color = "#d32f2f";
+                gameRef.update({ isGameOver: true });
+                alert(`遊戲結束！恭喜 ${winner} 獲勝！`);
+            }
+        }
+
+        function requestReset() {
+            const newSize = prompt("請輸入棋盤大小 (3-10):", "3") || 3;
+            const initialData = {
+                size: parseInt(newSize),
+                currentPlayer: 'black',
+                boardData: Array(parseInt(newSize)).fill().map(() => Array(parseInt(newSize)).fill(0)),
+                isGameOver: false
+            };
+            gameRef.update(initialData);
+        }
+    </script>
+</body>
+</html>
