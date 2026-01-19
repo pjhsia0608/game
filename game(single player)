@@ -1,0 +1,141 @@
+%%html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>十字封鎖遊戲 - 科展研究修正版</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f4f4f9; }
+        .controls { margin: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+        .info { margin-bottom: 10px; font-weight: bold; font-size: 1.2em; }
+        .board { display: grid; gap: 5px; background-color: #bbb; border: 5px solid #444; padding: 5px; margin-top: 10px; }
+        .cell {
+            width: 60px; height: 60px; background-color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; cursor: pointer; transition: 0.2s;
+        }
+        .cell:hover:not(.taken):not(.blocked) { background-color: #e0e0e0; }
+        .cell.black { color: black; font-size: 40px; }
+        .cell.blue { color: #1a73e8; font-size: 40px; }
+        .cell.blocked { color: #d32f2f; background-color: #ffebee; cursor: not-allowed; }
+        .cell.taken { cursor: not-allowed; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #4caf50; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+
+    <h2>十字封鎖遊戲 (修正版)</h2>
+
+    <div class="controls">
+        <label>棋盤大小: </label>
+        <input type="number" id="sizeInput" value="3" min="3" max="10" style="width: 50px; padding: 5px;">
+        <button onclick="resetGame()">開始新遊戲</button>
+        <div id="status" class="info" style="margin-top:15px;">輪到：黑子 (先手)</div>
+    </div>
+
+    <div id="gameBoard" class="board"></div>
+
+    <script>
+        let size = 3;
+        let currentPlayer = 'black';
+        let boardData = [];
+        let isGameOver = false;
+
+        function resetGame() {
+            size = parseInt(document.getElementById('sizeInput').value);
+            currentPlayer = 'black';
+            isGameOver = false;
+            boardData = Array(size).fill().map(() => Array(size).fill(0));
+            document.getElementById('status').innerText = "輪到：黑子 (先手)";
+            document.getElementById('status').style.color = "black";
+            renderBoard();
+        }
+
+        function renderBoard() {
+            const boardEl = document.getElementById('gameBoard');
+            boardEl.innerHTML = '';
+            boardEl.style.gridTemplateColumns = `repeat(${size}, 60px)`;
+
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+
+                    if (boardData[r][c] === 1) {
+                        cell.innerText = '●';
+                        cell.classList.add('black', 'taken');
+                    } else if (boardData[r][c] === 2) {
+                        cell.innerText = '●';
+                        cell.classList.add('blue', 'taken');
+                    } else {
+                        // 修正後的檢查邏輯：十字線上(橫+縱)總數
+                        if (checkBlocked(r, c)) {
+                            cell.innerText = '✕';
+                            cell.classList.add('blocked');
+                        } else {
+                            cell.onclick = () => makeMove(r, c);
+                        }
+                    }
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        function checkBlocked(r, c) {
+            let count = 0;
+            // 檢查同一個橫列 (row)
+            for (let i = 0; i < size; i++) {
+                if (boardData[r][i] !== 0) count++;
+            }
+            // 檢查同一個縱列 (column)
+            for (let i = 0; i < size; i++) {
+                if (boardData[i][c] !== 0) {
+                    // 為了避免重複計算交叉點 (r, c) 本身，這裡檢查是否為 0 即可
+                    // 因為我們現在是在檢查空格，所以交叉點一定還沒有棋子
+                    count++;
+                }
+            }
+            return count >= 2;
+        }
+
+        function makeMove(r, c) {
+            if (isGameOver) return;
+
+            boardData[r][c] = (currentPlayer === 'black') ? 1 : 2;
+            currentPlayer = (currentPlayer === 'black') ? 'blue' : 'black';
+
+            renderBoard();
+            checkWin();
+
+            if (!isGameOver) {
+                const pName = (currentPlayer === 'black') ? "黑子 (先手)" : "白子 (後手)";
+                document.getElementById('status').innerText = `輪到：${pName}`;
+                document.getElementById('status').style.color = (currentPlayer === 'black') ? "black" : "#1a73e8";
+            }
+        }
+
+        function checkWin() {
+            let canMove = false;
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    if (boardData[r][c] === 0 && !checkBlocked(r, c)) {
+                        canMove = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!canMove) {
+                isGameOver = true;
+                const winner = (currentPlayer === 'black') ? "白子 (後手)" : "黑子 (先手)";
+                document.getElementById('status').innerText = `遊戲結束！贏家是：${winner}`;
+                document.getElementById('status').style.color = "#d32f2f";
+                setTimeout(() => alert(`無棋可下！\n恭喜 ${winner} 獲勝！`), 100);
+            }
+        }
+
+        resetGame();
+    </script>
+</body>
+</html>
